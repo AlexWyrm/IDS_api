@@ -1,3 +1,4 @@
+'use strict';
 /**
  * Реализация API, не изменяйте ее
  * @param {string} url
@@ -46,15 +47,41 @@ function getData(url, callback) {
  */
 var requests = ['/countries', '/cities', '/populations'];
 
+//IE hack
+if (!Array.prototype.includes) {
+    Array.prototype.includes = function (element) {
+        for (var i = 0; i < this.length; i++) {
+            if (this[i] === element)
+                return true
+        }
+        return false;
+    }
+}
+
+//It is assumed that there is only one geographical object for any given name
+var findSelfOrChildren = function (array, parents, parentName, geo) {
+    var res = [];
+    for (var i = 0; i < array.length; i++) {
+        var element = array[i];
+
+        if (element.name === geo) {
+            return [element.name];
+        }
+
+        if (parents.includes(element[parentName]))
+            res.push(element.name);
+    }
+    return res;
+};
+
 var population = function (geo) {
     var responses = {};
     for (var i = 0; i < 3; i++) {
         var request = requests[i];
-        var callback_wrapper = function (request) {
+        var callback = function (request) {
             return function (error, result) {
                 if (error) {
-                    console.log('API returned error: ' + error);
-                    document.getElementById("output").innerHTML = 'Internal error';
+                    printResult('API returned error: ' + error);
                     return;
                 }
 
@@ -67,56 +94,36 @@ var population = function (geo) {
                 }
 
                 if (l == 3) {
-                    var c = [], cc = [], p = 0;
-                    for (i = 0; i < responses['/countries'].length; i++) {
-                        if (responses['/countries'][i].name === geo) {
-                            c.push(responses['/countries'][i].name);
-                            break;
-                        }
-                        if (responses['/countries'][i].continent === geo) {
-                            c.push(responses['/countries'][i].name);
-                        }
-                    }
+                    var parents = [geo];
+                    parents = findSelfOrChildren(responses['/countries'], parents, 'continent', geo);
+                    parents = findSelfOrChildren(responses['/cities'], parents, 'country', geo);
 
-                    for (i = 0; i < responses['/cities'].length; i++) {
-                        if (responses['/cities'][i].name === geo) {
-                            cc.push(responses['/cities'][i].name);
-                            break;
+                    var p = parents.reduce(function (acc, x) {
+                        for (var i = 0; i < responses['/populations'].length; i++) {
+                            var cityPop = responses['/populations'][i];
+                            if (cityPop.name === x)
+                                return acc + cityPop.count;
                         }
-                        for (j = 0; j < c.length; j++) {
-                            if (responses['/cities'][i].country === c[j]) {
-                                cc.push(responses['/cities'][i].name);
-                            }
-                        }
-                    }
-
-                    for (i = 0; i < responses['/populations'].length; i++) {
-                        for (var j = 0; j < cc.length; j++) {
-                            if (responses['/populations'][i].name === cc[j]) {
-                                p += responses['/populations'][i].count;
-                            }
-                        }
-                    }
+                        return acc;
+                    }, 0);
 
                     if (p != 0) {
-                        console.log('Total population in ' + geo + ": " + p);
-                        document.getElementById("output").innerHTML = 'Total population in ' + geo + ": " + p;
+                        printResult('Total population in ' + geo + ': ' + p);
                     } else {
-                        console.log(geo + " was not found");
-                        document.getElementById("output").innerHTML = geo + " was not found";
+                        printResult(geo + ' was not found');
                     }
 
                 }
             };
         };
 
-        var answer = getData(request, callback_wrapper(request));
-        if (answer) {
-            document.getElementById("output").innerHTML = answer;
-        }
+        getData(request, callback(request));
     }
 };
-document.getElementById("button").addEventListener("click", function () {
-    population(window.prompt("Please, enter the name of geographical object: ")
-    );
-});
+
+var output = document.getElementById("output");
+
+var printResult = function (result) {
+    console.log(result);
+    output.innerHTML = result;
+};
